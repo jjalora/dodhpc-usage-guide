@@ -51,15 +51,29 @@ kshell    # Initialize your shell
 kinit     # Initialize your session
 klist     # View your tickets
 ```
-These are valid for 24 hours (?).
+These are valid for 10 hours.
 
-> [!TIP]
-You have the option to change your password within 20 days. To do so, type the following after obtaining a Kerberos ticket:
+>[!TIP]
+You have the option to change your password within 20 days. To do so, type the following after obtaining a Kerberos ticket, and follow the prompts to change your password:
 ```bash
 kshell    # Initialize your shell
 kpasswd   # Change pw
 ```
-Follow the prompts to change your password.
+
+>[!TIP]
+If `kinit` is finding the wrong username, you can manually specify your principle:
+```bash
+kinit [username]@[REALM]
+```
+
+>[!WARNING]
+Kerberos initialization changes the ordering of which your authentication certificates are handled. A few workarounds is to change your ssh-config to include the following:
+```bash
+IdentitiesOnly yes
+GSSAPIAuthentication no
+PreferredAuthentications publickey
+```
+>Make sure to also run `chmod 600 ~/.ssh/config` if there is a permissions issue.
 
 ## Cluster Basics
 Introduce the basic concepts and structure of the HPC cluster.
