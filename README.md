@@ -23,19 +23,43 @@ After you've completed cyber awareness training, you can set up a DoD HPC Accoun
 3. Once complete, let John know! He'll connect you to the Agency Approval Authority (AAA). You'll send your cyber awareness training certificate to the AAA.
 
 ### Background check
-Go to the UPS and request for an **ink print**. This should be a small card that does not have a ton of numbers to fill out. The ERDC point of contact (should be Judy) will send you the instructions. Few notes:
+Go to the UPS and request for an **ink print**. This should be a small card that does not have a ton of numbers to fill out. The ERDC point of contact (should be Judy) will send you the instructions.
 
 >[!IMPORTANT]
 >On the fingerprint card on the left-hand side, under "REASON FINGERPRINTED": You will be required to document our Security Codes for processing:
 > **SOI: Z256, SON: 2222, ALC: 21008711**
 >
->[!NOTE]
+>**Note:**
 > If you do not document the security codes on your fingerprint card, the PSI Fingerprint Team will "discard" your card.
 
 Send your tracking number to the ERDC point of contact to begin the background check.
 
 ## Setup
-Explain the steps required to set up the environment for using the HPC system.
+The following steps required to set up the environment for using the HPC system.
+
+### Installing Kerberos
+Download and install Kerberos software at: [https://centers.hpc.mil/users/index.html#kerberos](https://centers.hpc.mil/users/index.html#kerberos).
+
+To install:
+ - Principle: [Your username]
+ - Password: should be sent to your email
+ - Realm: HPCMP.HPC.MIL
+
+Download for your operating system. Check that your installation is correct and obtain a Kerberos ticket:
+```bash
+kshell    # Initialize your shell
+kinit     # Initialize your session
+klist     # View your tickets
+```
+These are valid for 24 hours (?).
+
+> [!TIP]
+You have the option to change your password within 20 days. To do so, type the following after obtaining a Kerberos ticket:
+```bash
+kshell    # Initialize your shell
+kpasswd   # Change pw
+```
+Follow the prompts to change your password.
 
 ## Cluster Basics
 Introduce the basic concepts and structure of the HPC cluster.
