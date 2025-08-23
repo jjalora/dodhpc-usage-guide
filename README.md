@@ -93,6 +93,12 @@ Host *.arl.hpc.mil *.hpc.mil
   User [username]
 ```
 
+As before, ensure that you are logged into a Kerberos shell:
+```bash
+kshell    # Initialize your shell
+kinit     # Initialize your session
+```
+
 For any of the clusters, simply ssh in via your Kerberos certificate (enabled with GSS-API): `ssh [user]@[cluster.system]`. The following are available for us to use at the August 2025:
 
 | System    | Login                     | Center |
@@ -104,4 +110,19 @@ For any of the clusters, simply ssh in via your Kerberos certificate (enabled wi
 
 
 ## Running Jobs
-Detail the process of submitting and managing jobs on the HPC system.
+Detail the process of submitting and managing jobs on the HPC system. Unfortunately, each of the clusters have specific commands required to run any jobs (including keywords, etc.) as of August 2025.
+
+### Raider
+**Notes:** Infiniband connection, has NCCL backend.
+
+#### Interactive Job
+Good for debugging! 
+```bash
+srun --account ousaf40080AIR -q hie --nodes 1 --gpus-per-node 1 --ntasks-per-node=1 --constraint=mla --time=60:00 --pty bash
+```
+
+### Jean
+
+### Nautilus
+
+### Wheat
