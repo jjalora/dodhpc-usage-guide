@@ -1,4 +1,5 @@
 # HPC Usage Notes
+General user documentation can be found here: [https://centers.hpc.mil/users/index.html](https://centers.hpc.mil/users/index.html). Refer to this document for any details.
 
 ## User Onboarding
 Users for the HPC are required to be citizens of the USA. Contact John Alora to begin the process. *The goal of this is to obtain the all-powerful Yubikey to access the cluster!*
@@ -42,8 +43,8 @@ Download and install Kerberos software at: [https://centers.hpc.mil/users/index.
 
 To install:
  - Principle: [Your username]
- - Password: should be sent to your email
- - Realm: HPCMP.HPC.MIL
+ - Password: [should be sent to your email]
+ - Realm: `HPCMP.HPC.MIL`
 
 Download for your operating system. Check that your installation is correct and obtain a Kerberos ticket:
 ```bash
@@ -63,20 +64,44 @@ kpasswd   # Change pw
 >[!TIP]
 If `kinit` is finding the wrong username, you can manually specify your principle:
 ```bash
-kinit [username]@[REALM]
+kinit [username]@HPCMP.HPC.MIL
 ```
 
 >[!WARNING]
-Kerberos initialization changes the ordering of which your authentication certificates are handled. A few workarounds is to change your ssh-config to include the following:
+Kerberos initialization changes the ordering of which your authentication certificates are handled. Run `chmod 600 ~/.ssh/config` if there is a permissions issue. A few workarounds for handling ssh-id's vs kerberos id's to change your ssh-config to include the following:
 ```bash
 IdentitiesOnly yes
 GSSAPIAuthentication no
 PreferredAuthentications publickey
 ```
->Make sure to also run `chmod 600 ~/.ssh/config` if there is a permissions issue.
+
+### Authenticate to the HPC Portal
+The HPC Portal provides you with GUI tools on their (incredibly outdated looking) web interface. Some useful tools include the ability to check node availability and ability to manage files and jobs.
+
+To load, navigate your browser to: [https://centers.hpc.mil/portal](https://centers.hpc.mil/portal).
 
 ## Cluster Basics
 Introduce the basic concepts and structure of the HPC cluster.
+
+### SSH Configurations
+Depending on how you set up your ssh-config, you might want to add in the following, to force usage of GSS-API authentication:
+```bash
+Host *.arl.hpc.mil *.hpc.mil
+  GSSAPIAuthentication yes
+  GSSAPIDelegateCredentials yes
+  PreferredAuthentications gssapi-with-mic,publickey
+  User [username]
+```
+
+For any of the clusters, simply ssh in via your Kerberos certificate (enabled with GSS-API): `ssh [user]@[cluster.system]`. The following are available for us to use at the August 2025:
+
+| System    | Login                     | Center |
+|-----------|---------------------------|--------|
+| Jean      | jean.arl.hpc.mil          | ARL    |
+| Nautilus  | nautilus.navydsrc.hpc.mil | NAVY   |
+| Raider    | raider.afrl.hpc.mil       | AFRL   |
+| Wheat     | wheat.erdc.hpc.mil        | ERDC   |
+
 
 ## Running Jobs
 Detail the process of submitting and managing jobs on the HPC system.
