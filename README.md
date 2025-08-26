@@ -137,7 +137,7 @@ srun --account ousaf40080AIR -p HIE --nodes 1 --gpus-per-node 1 --ntasks-per-nod
 #### Distributed Training
 Jean has infiniband and NCCL backend. A few things to set up prior to running:
 
-``bash
+```bash
 export NCCL_IB_DISABLE=0
 export NCCL_NET=IB
 export NCCL_IB_HCA=mlx5_0:1,mlx5_3:1  # Use both 200G IB ports
