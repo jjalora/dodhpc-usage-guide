@@ -24,14 +24,14 @@ After you've completed cyber awareness training, you can set up a DoD HPC Accoun
 3. Once complete, let John know! He'll connect you to the Agency Approval Authority (AAA). You'll send your cyber awareness training certificate to the AAA.
 
 ### Background check
-Go to the UPS and request for an **ink print**. This should be a small card that does not have a ton of numbers to fill out. The ERDC point of contact (should be Judy) will send you the instructions.
+Go to the UPS and request for an **ink print**. This should be a small card that does not have a ton of numbers to fill out. The ERDC point of contact (should be Judy) will send you the detailed instructions.
 
 >[!IMPORTANT]
->On the fingerprint card on the left-hand side, under "REASON FINGERPRINTED": You will be required to document our Security Codes for processing:
+>On the fingerprint card on the left-hand side, under "REASON FINGERPRINTED": You will be required to document their Security Codes for processing:
 > **SOI: Z256, SON: 2222, ALC: 21008711**
 >
 >**Note:**
-> If you do not document the security codes on your fingerprint card, the PSI Fingerprint Team will "discard" your card.
+> If you do not document the security codes on your fingerprint card, the PSI Fingerprint Team will discard your card.
 
 Send your tracking number to the ERDC point of contact to begin the background check.
 
@@ -110,10 +110,13 @@ For any of the clusters, simply ssh in via your Kerberos certificate (enabled wi
 
 
 ## Running Jobs
-Detail the process of submitting and managing jobs on the HPC system. Unfortunately, each of the clusters have specific commands required to run any jobs (including keywords, etc.) as of August 2025.
+Detail the process of submitting and managing jobs on the HPC system. 
+
+Most of the HPC clusters we will use leverage a Slurm job manager. Refer to [their official documentation](https://slurm.schedmd.com/quickstart.html) or my [go-to](https://it.coecis.cornell.edu/researchit/g2cluster/#Create_a_SLURM_Submission_Script). 
+Unfortunately, each of the clusters have specific commands required to run any jobs (including keywords, etc.) as of August 2025.
 
 ### Raider
-**Notes:** Infiniband connection, has NCCL backend.
+**Notes:** Infiniband connection (ib0), need to check NCCL backend.
 
 #### Interactive Job
 Good for debugging! 
@@ -122,6 +125,27 @@ srun --account ousaf40080AIR -q hie --nodes 1 --gpus-per-node 1 --ntasks-per-nod
 ```
 
 ### Jean
+**Notes:** Infiniband connection (ib0), with NCCL backend. Use ib0 for distributed training.
+
+As of August, 2025, you are required to agree to an Usage Agreement each time you ssh in.
+
+#### Interactive Job
+```bash
+srun --account ousaf40080AIR -p HIE --nodes 1 --gpus-per-node 1 --ntasks-per-node=1 --time=60:00 --pty bash
+```
+
+#### Distributed Training
+Jean has infiniband and NCCL backend. A few things to set up prior to running:
+
+``bash
+export NCCL_IB_DISABLE=0
+export NCCL_NET=IB
+export NCCL_IB_HCA=mlx5_0:1,mlx5_3:1  # Use both 200G IB ports
+export NCCL_IB_ADDR_FAMILY=AF_INET
+export NCCL_SOCKET_IFNAME=ib0  # For bootstrap only
+```
+
+Launch with `sbatch [slurm_script].sh`. See an example [here](jean/sample_slurm_script.sh).
 
 ### Nautilus
 
