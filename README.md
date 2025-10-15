@@ -148,5 +148,26 @@ export NCCL_SOCKET_IFNAME=ib0  # For bootstrap only
 Launch with `sbatch [slurm_script].sh`. See an example [here](jean/sample_slurm_script.sh).
 
 ### Nautilus
+Queue.
+
+#### Interactive Job
+```bash
+srun --account ousaf40080AIR -q hie --nodes 1 --gpus-per-node 1 --ntasks-per-node=1 --constraint=mla --time=60:00 --pty bash
+```
 
 ### Wheat
+
+## Softwares
+
+Load modules in the cluster:
+```bash
+module load cseinit-noloads
+
+module avail cse  # Check what is available
+```
+
+### Using Mini-Conda
+The HPC clusters come with a miniforge installation of conda (Mini-Conda). Load it with the following:
+```bash
+module load cse/miniforge/latest
+```
