@@ -182,9 +182,22 @@ alias fran="ssh <dod-username>@fran.arl.hpc.mil"
 
 ### Step 2: install load_modules_cuda.sh
 
-Each cluster keeps its `module load` lines in `~/load_modules_cuda.sh` on that cluster, because module names differ per system. A working Jean example lives in [jean/load_modules_cuda.sh](jean/load_modules_cuda.sh). `make setup-cluster` bootstraps a best-effort starter file automatically — verify it against `module avail cuda` / `module avail anaconda` on that cluster before trusting long jobs to it.
+Each cluster keeps its `module load` lines in `~/load_modules_cuda.sh` on that cluster, because module names differ per system. The repo ships a known-good script for every cluster in [load_modules/](load_modules/); `make setup-cluster CLUSTER=<c>` installs the matching one to `~/load_modules_cuda.sh` automatically, backing up any pre-existing file that differs to `~/load_modules_cuda.sh.bak`. To install by hand instead:
 
-As of Aug 19, 2026, Fran and Makau do not have the cseinit modules, so `load_modules_cuda.sh` handles module loading differently on those clusters — which is exactly why the module lines live in a per-cluster file.
+```bash
+scp load_modules/load_modules_cuda.jean.sh <dod-username>@jean01.arl.hpc.mil:load_modules_cuda.sh
+```
+
+The scripts read your API keys from chmod-600 files on the cluster rather than embedding them — if you use W&B or the Anthropic API, create the key files once per cluster:
+
+```bash
+printf '%s' '<your key>' > ~/.wandb_api_key     && chmod 600 ~/.wandb_api_key
+printf '%s' '<your key>' > ~/.anthropic_api_key && chmod 600 ~/.anthropic_api_key
+```
+
+Never put a key in the script itself — these files are committed to git.
+
+As of Aug 19, 2026, Fran and Makau do not have the cseinit modules, so their `load_modules_cuda` scripts load modules differently — which is exactly why the module lines live in a per-cluster file.
 
 ### Step 3: set up your git identity on the cluster
 
@@ -327,7 +340,6 @@ Submit through the Makefile (`make submit`, section 5) or adapt the templates di
 
 - [scripts/slurm/example_job.sh](scripts/slurm/example_job.sh) — SLURM: single-GPU, multi-GPU `torchrun`, and multi-node launch tiers; W&B offline fallback; per-cluster env via `scripts/cluster_env.sh`.
 - [scripts/pbs/example_job.sh](scripts/pbs/example_job.sh) — PBS (Wheat): the same tiers via `pbsdsh`, plus the `JOB_ARGS` re-tokenization and Wheat-specific fixes.
-- [jean/sample_slurm_script.sh](jean/sample_slurm_script.sh) — a bare-bones working multi-node example on Jean.
 
 When a job fails, work in this order: `make status` (did it start?), `make logs` and `make logs-err` (read both tails), classify the failure (auth, environment, path, scheduler, out-of-memory, NCCL hang, NaN — check [per-cluster quirks](#10-per-cluster-quirks) first), then rerun the smallest thing that tests your hypothesis.
 
@@ -343,7 +355,7 @@ export NCCL_IB_ADDR_FAMILY=AF_INET
 export NCCL_SOCKET_IFNAME=ib0  # For bootstrap only
 ```
 
-Launch with `sbatch [slurm_script].sh` — see the [Jean example](jean/sample_slurm_script.sh) — or `make submit CLUSTER=jean NODES=2 NUM_GPU=4`.
+Launch with `make submit CLUSTER=jean NODES=2 NUM_GPU=4`, or adapt [scripts/slurm/example_job.sh](scripts/slurm/example_job.sh) and `sbatch` it yourself.
 
 On A100-PCIE nodes (Wheat's MLA nodes), set `NCCL_P2P_DISABLE=1` or every multi-GPU job hangs right after DDP initialization (see [quirks](#10-per-cluster-quirks)).
 
@@ -395,7 +407,7 @@ module avail cse  # Check what is available
 ```
 
 > [!NOTE]
-> As of Aug 19, 2026, **Fran and Makau do not have the cseinit modules**. `~/load_modules_cuda.sh` handles module loading differently on those clusters — keep your module lines in that per-cluster file rather than in job scripts.
+> As of Aug 19, 2026, **Fran and Makau do not have the cseinit modules**. Their scripts in [load_modules/](load_modules/) load modules differently (Fran sources the CSE Miniforge directly and uses `cuda/12.9`; Makau uses the system conda and an `nvidia/nvhpc` module) — keep module lines in the per-cluster file rather than in job scripts.
 
 ### Using Mini-Conda
 
@@ -405,7 +417,7 @@ The HPC clusters come with a miniforge installation of conda (Mini-Conda). Load 
 module load cse/miniforge/latest
 ```
 
-`make setup-cluster CLUSTER=<c>` automates the full environment build: module bootstrap, conda env creation, and dependency install (edit the `pip install` lines in [scripts/setup_cluster_env.sh](scripts/setup_cluster_env.sh) to match your project).
+`make setup-cluster CLUSTER=<c>` automates the full environment build: it installs the cluster's script from [load_modules/](load_modules/) as `~/load_modules_cuda.sh`, creates the conda env, and installs dependencies (edit the `pip install` lines in [scripts/setup_cluster_env.sh](scripts/setup_cluster_env.sh) to match your project).
 
 ## 10. Per-cluster quirks
 

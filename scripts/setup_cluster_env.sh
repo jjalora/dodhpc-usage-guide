@@ -59,9 +59,20 @@ if [ "$CLUSTER" = "anvil" ]; then
 else
     # ─── DoD HPCMP (jean / raider / nautilus / wheat / fran / makau) ───
     # Module loads live in a per-cluster ~/load_modules_cuda.sh because module
-    # names differ per system. On a fresh cluster, bootstrap a best-effort
-    # starter so setup can proceed; the WARNs inside it name the fix.
-    if [ ! -f "$HOME/load_modules_cuda.sh" ]; then
+    # names differ per system. The repo ships known-good scripts in
+    # load_modules/ — install the matching one, so `make setup-cluster` keeps
+    # every cluster's module file in sync with the repo. A pre-existing file
+    # that differs is backed up, never silently lost. For a cluster the repo
+    # doesn't know yet, fall back to bootstrapping a best-effort starter.
+    REPO_LM="load_modules/load_modules_cuda.${CLUSTER}.sh"
+    if [ -f "$REPO_LM" ]; then
+        if [ -f "$HOME/load_modules_cuda.sh" ] && ! cmp -s "$REPO_LM" "$HOME/load_modules_cuda.sh"; then
+            cp "$HOME/load_modules_cuda.sh" "$HOME/load_modules_cuda.sh.bak"
+            echo "Backed up existing ~/load_modules_cuda.sh -> ~/load_modules_cuda.sh.bak"
+        fi
+        cp "$REPO_LM" "$HOME/load_modules_cuda.sh"
+        echo "Installed $REPO_LM -> ~/load_modules_cuda.sh"
+    elif [ ! -f "$HOME/load_modules_cuda.sh" ]; then
         cat > "$HOME/load_modules_cuda.sh" <<'MODEOF'
 #!/bin/bash
 # Starter module loads — created by scripts/setup_cluster_env.sh.
