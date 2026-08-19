@@ -114,7 +114,7 @@ hpc_host() {
         nautilus) echo nautilus.navydsrc.hpc.mil ;;
         wheat)    echo wheat.erdc.hpc.mil ;;
         fran)     echo fran.arl.hpc.mil ;;
-        makau)    echo makau01.mhpcc.hpc.mil ;;   # pinned node: alias intermittently rejects GSSAPI
+        makau)    echo makau.mhpcc.hpc.mil ;;
         *)        echo "$1" ;;
     esac
 }

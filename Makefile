@@ -98,10 +98,7 @@ SSH_raider   = raider.afrl.hpc.mil
 SSH_nautilus = nautilus.navydsrc.hpc.mil
 SSH_wheat    = wheat.erdc.hpc.mil
 SSH_fran     = fran.arl.hpc.mil
-# makau: pin a login node (like jean01). The round-robin alias makau.mhpcc.hpc.mil
-# intermittently rejects GSSAPI — some nodes lack the alias host principal in
-# their keytab — while every node accepts its own name (verified makau01-04).
-SSH_makau    = makau01.mhpcc.hpc.mil
+SSH_makau    = makau.mhpcc.hpc.mil
 SSH_anvil    = $(ANVIL_USER)@anvil.rcac.purdue.edu
 # Recursive so the error only fires when a remote target actually expands it;
 # without the guard an unknown CLUSTER yields an empty host and ssh silently

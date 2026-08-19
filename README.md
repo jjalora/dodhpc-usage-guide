@@ -180,8 +180,6 @@ alias makau="ssh <dod-username>@makau.mhpcc.hpc.mil"
 alias fran="ssh <dod-username>@fran.arl.hpc.mil"
 ```
 
-If makau's round-robin address ever rejects your Kerberos login, ssh to a specific login node instead (makau01–makau04) — some nodes intermittently reject GSSAPI on the alias name.
-
 ### Step 2: install load_modules_cuda.sh
 
 Each cluster keeps its `module load` lines in `~/load_modules_cuda.sh` on that cluster, because module names differ per system. A working Jean example lives in [jean/load_modules_cuda.sh](jean/load_modules_cuda.sh). `make setup-cluster` bootstraps a best-effort starter file automatically — verify it against `module avail cuda` / `module avail anaconda` on that cluster before trusting long jobs to it.
@@ -438,7 +436,6 @@ This knowledge costs days to rediscover. When a job fails strangely, read the cl
 - No cseinit modules (as of Aug 19, 2026) — module loading goes through `~/load_modules_cuda.sh`.
 
 **Makau**
-- The round-robin login alias intermittently rejects GSSAPI (some nodes lack the alias host principal); if your login bounces, ssh to a specific node (makau01–04). The kit's Makefile pins makau01 for this reason, so automated commands never hit the flake.
 - Typed gres with two node classes: `h100_sxm5` (AI/ML nodes, 4× 80 GB, node-local NVMe) or `h100_nvl` (Mixed nodes, 1× 94 GB — one GPU per node, so multi-GPU means multi-node).
 - The system conda's `conda init` crashes outright (read-only base install); `setup_cluster_env.sh` treats it as best-effort.
 - No cseinit modules (as of Aug 19, 2026) — module loading goes through `~/load_modules_cuda.sh`.

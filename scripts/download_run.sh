@@ -18,7 +18,7 @@ case "$CLUSTER" in
     nautilus) SSH_HOST="nautilus.navydsrc.hpc.mil" ;;
     wheat)    SSH_HOST="wheat.erdc.hpc.mil" ;;
     fran)     SSH_HOST="fran.arl.hpc.mil" ;;
-    makau)    SSH_HOST="makau01.mhpcc.hpc.mil" ;;   # pinned node: alias intermittently rejects GSSAPI
+    makau)    SSH_HOST="makau.mhpcc.hpc.mil" ;;
     anvil)    SSH_HOST="${ANVIL_USER}@anvil.rcac.purdue.edu" ;;
     *)        SSH_HOST="$CLUSTER" ;;
 esac
