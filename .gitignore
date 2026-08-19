@@ -1,0 +1,12 @@
+# Personal configuration (written by `make configure`)
+config.mk
+
+# OS noise
+.DS_Store
+
+# Run artifacts
+logs/
+outputs/
+smoke_output/
+wandb_offline_sync/
+__pycache__/
