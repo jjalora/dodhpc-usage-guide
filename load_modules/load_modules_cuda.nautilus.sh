@@ -6,7 +6,12 @@ module load cseinit-noloads
 module load cse/miniforge/latest
 module load cuda
 # Guarded: if the CSE tree is not mounted here, cluster_env.sh falls back to the env bin/.
-[ -r /p/app/CSE/CSE.20231125/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh ] && source /p/app/CSE/CSE.20231125/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh
+if [ -r /p/app/CSE/CSE.20231125/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh ]; then
+    source /p/app/CSE/CSE.20231125/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh
+else
+    # Not fatal: cluster_env.sh falls back to the env's bin/ on PATH.
+    echo "WARN: conda hook not found at /p/app/CSE/CSE.20231125/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh" >&2
+fi
 
 # Node via nvm
 export NVM_DIR="$HOME/.nvm"

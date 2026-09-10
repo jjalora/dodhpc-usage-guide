@@ -260,7 +260,9 @@ echo ""
 echo "============================================"
 echo "Setup complete!"
 echo ""
-echo "To activate:  conda activate ${ENV_NAME}"
+# Print what was actually created: anvil always uses a prefix, and DoD does too
+# when HPC_ENV_ROOT is set. `conda activate <name>` does not work for those.
+echo "To activate:  conda activate ${ENV_PREFIX:-$ENV_NAME}"
 echo "To submit:    make submit CLUSTER=${CLUSTER:-<cluster>}"
 echo "Interactive:  bash scripts/slurm/interactive.sh"
 echo "Output dir:   ${WORK}/${ENV_NAME}-outputs/"

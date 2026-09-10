@@ -18,7 +18,12 @@ module load nvidia/2026/nvhpc-nompi/26.3 2>/dev/null \
 # Login nodes only: the compute image has no conda at all. Guard the source so
 # job bodies do not emit a "No such file or directory" error; cluster_env.sh
 # then falls back to the env's bin/ on PATH.
-[ -r /etc/profile.d/conda.sh ] && source /etc/profile.d/conda.sh
+if [ -r /etc/profile.d/conda.sh ]; then
+    source /etc/profile.d/conda.sh
+else
+    # Not fatal: cluster_env.sh falls back to the env's bin/ on PATH.
+    echo "WARN: conda hook not found at /etc/profile.d/conda.sh" >&2
+fi
 
 # Node via nvm
 export NVM_DIR="$HOME/.nvm"

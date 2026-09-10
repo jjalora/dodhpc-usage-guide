@@ -172,6 +172,11 @@ SBATCH_ARGS   = $(SBATCH_GPU) $(SBATCH_COMMON)
 # ("Invalid GRES specified"): h100_sxm5 is only valid with 4 GPUs and h100_nvl
 # only with 1. A static default therefore broke `make smoke` (NUM_GPU=1) on this
 # cluster, so derive it from the GPU count; override explicitly when needed.
+#
+# WARNING: do NOT pin this in config.mk. A fixed `MAKAU_GPU_TYPE := h100_sxm5`
+# there defeats the derivation and re-breaks `make smoke` (which forces
+# NUM_GPU=1) with "Invalid GRES specified". Override per command instead:
+#   make submit CLUSTER=makau MAKAU_GPU_TYPE=h100_nvl NUM_GPU=1
 MAKAU_GPU_TYPE ?= $(if $(filter 1,$(strip $(NUM_GPU))),h100_nvl,h100_sxm5)
 
 # Wheat (PBS) qsub args. ncpus=92 is the full standard/MLA node on wheat.
@@ -216,16 +221,10 @@ CANCEL_ONE_CMD   = scancel
 CANCEL_ALL_CMD   = scancel -u $$USER
 endif
 
-# Cluster-specific srun args for quick single-GPU tasks (analysis, checks).
-# Wheat uses qsub -I (interactive) for its analog.
-SRUN_GPU_jean     = srun --account $(ACCOUNT) --gres=aiml --partition=$(PARTITION) --gpus-per-node=1 --nodes 1 --time=1:00:00
-SRUN_GPU_raider   = srun --account $(ACCOUNT) --constraint=mla --gpus-per-node=1 -q $(PARTITION) --nodes 1 --time=1:00:00
-SRUN_GPU_nautilus = srun --account $(ACCOUNT) --constraint=mla --gpus-per-node=1 -q $(PARTITION) --nodes 1 --time=1:00:00
-SRUN_GPU_anvil    = srun --account $(strip $(ACCOUNT)) -p $(strip $(PARTITION)) --gpus-per-node=1 --nodes 1 --time=1:00:00
-SRUN_GPU_fran     = srun --account $(ACCOUNT) -p $(strip $(PARTITION)) --gres=gpu:1 --nodes 1 --time=1:00:00
-# Interactive asks for exactly 1 GPU, so it must use the Mixed-node type (see MAKAU_GPU_TYPE).
-SRUN_GPU_makau    = srun --account $(ACCOUNT) -p $(strip $(PARTITION)) --gres=gpu:$(strip $(if $(filter h100_sxm5,$(strip $(MAKAU_GPU_TYPE))),h100_nvl,$(MAKAU_GPU_TYPE))):1 --nodes 1 --time=1:00:00
-SRUN_GPU          = $(SRUN_GPU_$(CLUSTER))
+# NOTE: the SRUN_GPU_<cluster> block that used to live here was dead code — it
+# was defined for six clusters and referenced by nothing. `make interactive` goes
+# through scripts/slurm/interactive.sh (and qsub -I on wheat), which is the one
+# place per-cluster interactive flags belong. Add them there, not here.
 
 # Remote environment preamble: one dispatcher script handles every cluster
 # (DoD = ~/load_modules_cuda.sh + conda; anvil = Lmod + WORKDIR=$SCRATCH alias).
