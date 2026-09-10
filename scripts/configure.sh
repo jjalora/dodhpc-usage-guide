@@ -9,7 +9,8 @@
 #   make configure          # or: bash scripts/configure.sh
 #
 # Non-interactive (env vars preseed the answers; --yes accepts them):
-#   PROJECT_NAME=myproj DOD_USER=jdoe ACCOUNT_DOD=PROJ123 bash scripts/configure.sh --yes
+#   PROJECT_NAME=myproj DOD_USER=jdoe ANVIL_USER=x-jdoe bash scripts/configure.sh --yes
+# Accounts default to the AI Studio allocations (OUSAF40080AIR / nairr260061-ai).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -33,8 +34,8 @@ DEF_PROJECT="${DEF_PROJECT:-myproject}"
 DEF_GITHUB="${DEF_GITHUB:-git@github.com:your-org/${DEF_PROJECT}.git}"
 DEF_DOD_USER="${DEF_DOD_USER:-your-dod-username}"
 DEF_ANVIL_USER="${DEF_ANVIL_USER:-your-anvil-username}"
-DEF_DOD_ACCT="${DEF_DOD_ACCT:-YOUR_HPCMP_PROJECT_ID}"
-DEF_ANVIL_ACCT="${DEF_ANVIL_ACCT:-your-anvil-allocation}"
+DEF_DOD_ACCT="${DEF_DOD_ACCT:-OUSAF40080AIR}"
+DEF_ANVIL_ACCT="${DEF_ANVIL_ACCT:-nairr260061-ai}"
 
 NONINTERACTIVE=0
 case "${1:-}" in --yes|-y) NONINTERACTIVE=1 ;; esac

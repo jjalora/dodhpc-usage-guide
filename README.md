@@ -1,10 +1,10 @@
 # DoD HPC usage guide
 
-This repo is the one-stop reference for using the DoD High Performance Computing Modernization Program (HPCMP) clusters with the AI Studio — from getting an account to training and serving models. It also ships the helper kit that makes the clusters easy to drive from your laptop: a `Makefile` plus `scripts/` that handle authentication checks, code sync, job submission on both schedulers (SLURM and PBS Pro), monitoring, transfers, and a smoke test that verifies a cluster end-to-end.
+This repo is the one-stop reference for using the DoD High Performance Computing Modernization Program (HPCMP) clusters with the AI Studio — from getting an account to training and serving models. It also ships the helper kit that makes the clusters easy to drive from your laptop: `hpc.mk` (a Makefile you `include`) plus `scripts/` that handle authentication checks, code sync, job submission on both schedulers (SLURM and PBS Pro), monitoring, transfers, and a smoke test that verifies a cluster end-to-end. `install.sh` drops the kit into any project, and [AGENT_SETUP.md](AGENT_SETUP.md) lets an AI coding agent (Claude Code, Codex, OpenCode) do the whole installation and smoke test for you.
 
 General user documentation lives at [centers.hpc.mil/users](https://centers.hpc.mil/users/index.html) — refer to it for anything this guide does not cover.
 
-New here? Work through sections 1–4 in order (start section 1 early — the background check takes weeks), then run the [smoke test](#6-smoke-test).
+New here? Work through sections 1–4 in order (start section 1 early — the background check takes weeks), then run the [smoke test](#6-smoke-test). Already have accounts and want the kit in your own repo? Jump to [Install into your project](#5-the-helper-kit).
 
 ## Table of contents
 
@@ -217,9 +217,11 @@ ssh-keygen -t ecdsa -b 384 -C "jjalora@stanford.edu"
 
 ### Step 4: register the deploy key on GitHub
 
-1. Print the public key on the cluster: `cat ~/.ssh/id_ed25519.pub` (or `id_ecdsa.pub` on Fran).
+`make deploy-key CLUSTER=<cluster>` does this for you: it creates `~/.ssh/id_deploy` on the cluster if missing (ECDSA-384 on Fran, ed25519 elsewhere) and registers the public key on your repo with write access via `gh`, or prints it with the manual steps. By hand:
+
+1. Print the public key on the cluster: `cat ~/.ssh/id_deploy.pub`.
 2. In your project's GitHub repo: Settings → Deploy keys → Add deploy key. Paste the key and check **Allow write access** (the sync step pushes a snapshot branch, so read-only keys fail).
-3. Save the private key on the cluster at `~/.ssh/id_deploy` (or set `DEPLOY_KEY=` when running make).
+3. The private key must live on the cluster at `~/.ssh/id_deploy` (or set `DEPLOY_KEY=` when running make).
 
 GitHub allows a key to be registered only once across all of GitHub, so each cluster needs its own key pair.
 
@@ -229,17 +231,25 @@ With the key in place, finish the cluster from your laptop:
 make sync CLUSTER=<cluster>            # put the code on the cluster
 make setup-cluster CLUSTER=<cluster>   # conda env + dependencies (one time)
 make smoke CLUSTER=<cluster>           # verify end-to-end (section 6)
+make smoke-wait CLUSTER=<cluster>
 ```
 
 ## 5. The helper kit
 
-The `Makefile` and `scripts/` in this repo drive every cluster from your laptop. Copy them into your own project (or use this repo directly), then configure once:
+`hpc.mk` and `scripts/` in this repo drive every cluster from your laptop. Install them into your own project with one command, run from your project's root:
 
 ```bash
-make configure     # writes config.mk (gitignored) + prints your personalized ssh aliases
+curl -fsSL https://raw.githubusercontent.com/jjalora/dodhpc-usage-guide/main/install.sh \
+  | bash -s -- --target . --dod-user <dod-username> --anvil-user <x-username>
 ```
 
-`config.mk` holds your project name, usernames, and accounts; because it is gitignored, `git pull` never conflicts with your settings and nothing personal gets committed.
+The installer copies `hpc.mk`, `scripts/`, `load_modules/`, and `examples/train_smoke.py`; adds `include hpc.mk` to your `Makefile` (creating one if needed; your own targets and default goal are untouched); writes `config.mk`; installs the `hpc-cluster` agent skill under `.claude/skills/` with an `.agents/skills/` link so Claude Code, Codex, and OpenCode all find it; and appends a short HPC section to `AGENTS.md` and `CLAUDE.md`. It is idempotent — re-run it to pick up kit updates. The project name comes from the directory, the GitHub URL from `origin`, and the accounts default to the AI Studio allocations, so the two usernames are the only inputs. Pass `--install-cmd '<cmd>'` if your project needs a non-standard install on the cluster (default: `pip install -e .` or `requirements.txt`, plus `torch` if missing).
+
+**Let an agent do it.** Point Claude Code, Codex, or OpenCode at [AGENT_SETUP.md](AGENT_SETUP.md) ("follow these instructions") — it collects your two usernames, installs the kit, walks you through `kinit`, sets up the cluster environment, and runs the smoke test until it passes.
+
+`config.mk` holds your project name, usernames, and accounts; because it is gitignored, `git pull` never conflicts with your settings and nothing personal gets committed. Re-run `make configure` to change it interactively.
+
+**Code sync modes.** `make sync` defaults to git mode (below), which needs a per-cluster deploy key: `make deploy-key CLUSTER=<c>` creates the key on the cluster (ECDSA on Fran) and registers it on GitHub through `gh` when available, or prints the manual steps. For a repo that is not on GitHub, or before the key exists, `SYNC_MODE=rsync make sync CLUSTER=<c>` rsyncs your working tree instead. Do not alternate modes on one remote checkout.
 
 **The sync model: GitHub is authoritative.** `make sync CLUSTER=<c>` makes the cluster's checkout exactly match `origin/<branch>` (default: your laptop's current branch). If the cluster has local edits, the sync first commits them to a per-cluster branch named `cluster-snapshot/<cluster>` and pushes it — nothing is lost, and because each snapshot branch has exactly one writer, clusters never conflict with each other. To keep a cluster-side change, deliberately merge `origin/cluster-snapshot/<cluster>` into your main branch.
 
@@ -253,7 +263,7 @@ make logs-err CLUSTER=raider    # tail newest stderr log (Python tracebacks land
 make cancel CLUSTER=raider RUN_ID=<jobid>
 ```
 
-`submit` syncs the code, then submits `scripts/slurm/example_job.sh` (or `scripts/pbs/example_job.sh` on Wheat). The job scripts contain only universal directives; all cluster-specific resource flags come from the Makefile's per-cluster tables, so one script runs everywhere. `EXTRA_ARGS` is forwarded to your training entry point — on Wheat it rides in via the `JOB_ARGS` env var because PBS `qsub` has no `-F "args"` flag.
+`submit` syncs the code, then submits `scripts/slurm/example_job.sh` (or `scripts/pbs/example_job.sh` on Wheat). The job scripts contain only universal directives; all cluster-specific resource flags come from `hpc.mk`'s per-cluster tables, so one script runs everywhere. `EXTRA_ARGS` is forwarded to your training entry point — on Wheat it rides in via the `JOB_ARGS` env var because PBS `qsub` has no `-F "args"` flag.
 
 To run your own code, replace `examples/train_smoke.py` in the two job templates with your entry point. Everything above the launch lines is cluster plumbing you keep.
 
@@ -263,8 +273,10 @@ Before trusting a cluster — after first setup, after any environment change, a
 
 ```bash
 make smoke CLUSTER=raider          # submits a short job: tiny MLP on synthetic data
-make logs CLUSTER=raider           # expect: "SMOKE TEST PASSED (final loss ...)"
+make smoke-wait CLUSTER=raider     # polls until it finishes, prints the log tail and RESULT: SMOKE TEST PASSED
 ```
+
+`smoke-wait` exits 0 on pass, 1 on failure (with the stderr tail), and 2 if the job is still queued after 30 minutes (re-run it later). It also warns when the job ran on CPU instead of CUDA, which is a torch-wheel-vs-driver mismatch, not a pass.
 
 The smoke job trains a small neural network ([examples/train_smoke.py](examples/train_smoke.py)) for 200 steps on synthetic data — no downloads, so it works on air-gapped clusters — and saves a checkpoint. It proves the whole chain: Kerberos, sync, scheduler submission, modules, conda env, GPU allocation, and CUDA.
 
@@ -276,7 +288,7 @@ make smoke CLUSTER=raider NUM_GPU=4
 
 ## 7. Running jobs
 
-Most clusters use the SLURM scheduler; Wheat uses PBS Pro. See the [SLURM quickstart](https://slurm.schedmd.com/quickstart.html) or this [go-to reference](https://it.coecis.cornell.edu/researchit/g2cluster/#Create_a_SLURM_Submission_Script). Each cluster needs specific resource keywords, encoded in the Makefile and summarized here:
+Most clusters use the SLURM scheduler; Wheat uses PBS Pro. See the [SLURM quickstart](https://slurm.schedmd.com/quickstart.html) or this [go-to reference](https://it.coecis.cornell.edu/researchit/g2cluster/#Create_a_SLURM_Submission_Script). Each cluster needs specific resource keywords, encoded in `hpc.mk` and summarized here:
 
 | Cluster  | GPU request on the submit line |
 |----------|-------------------------------|
@@ -336,7 +348,7 @@ srun --account <allocation> -p ai --gpus-per-node=1 --nodes 1 --ntasks-per-node=
 
 ### Batch jobs
 
-Submit through the Makefile (`make submit`, section 5) or adapt the templates directly:
+Submit through the make targets (`make submit`, section 5) or adapt the templates directly:
 
 - [scripts/slurm/example_job.sh](scripts/slurm/example_job.sh) — SLURM: single-GPU, multi-GPU `torchrun`, and multi-node launch tiers; W&B offline fallback; per-cluster env via `scripts/cluster_env.sh`.
 - [scripts/pbs/example_job.sh](scripts/pbs/example_job.sh) — PBS (Wheat): the same tiers via `pbsdsh`, plus the `JOB_ARGS` re-tokenization and Wheat-specific fixes.
@@ -417,7 +429,7 @@ The HPC clusters come with a miniforge installation of conda (Mini-Conda). Load 
 module load cse/miniforge/latest
 ```
 
-`make setup-cluster CLUSTER=<c>` automates the full environment build: it installs the cluster's script from [load_modules/](load_modules/) as `~/load_modules_cuda.sh`, creates the conda env, and installs dependencies (edit the `pip install` lines in [scripts/setup_cluster_env.sh](scripts/setup_cluster_env.sh) to match your project).
+`make setup-cluster CLUSTER=<c>` automates the full environment build: it installs the cluster's script from [load_modules/](load_modules/) as `~/load_modules_cuda.sh`, creates the conda env, and installs your project (`pip install -e .` when there is a `pyproject.toml`/`setup.py`, else `requirements.txt`, plus `torch` if the project did not bring it; set `HPC_INSTALL_CMD := <cmd>` in `config.mk` to override).
 
 ## 10. Per-cluster quirks
 
@@ -461,7 +473,7 @@ This knowledge costs days to rediscover. When a job fails strangely, read the cl
 
 **Any cluster**
 - NCCL failures are hangs, not errors. A multi-GPU job frozen right after DDP init is an environment problem until proven otherwise.
-- Tilde expansion crosses machines: `export REMOTE_DIR=~/proj` expands to your laptop's home. The Makefile restores the `~/` so paths resolve on the cluster.
+- Tilde expansion crosses machines: `export REMOTE_DIR=~/proj` expands to your laptop's home. `hpc.mk` restores the `~/` so paths resolve on the cluster.
 - Non-interactive ssh shells do not run `/etc/profile.d`, so `module` may not exist — the kit's scripts source the module init files by hand.
 
 ## 11. Shortcut make commands
@@ -471,9 +483,10 @@ Run `make help` for the live list. All targets take `CLUSTER=<jean|raider|nautil
 | Command | What it does |
 |---------|--------------|
 | `make configure` | One-time: write `config.mk` (usernames, accounts, project) and print your ssh aliases |
-| `make sync` | Make the cluster's code match GitHub (cluster edits saved to `cluster-snapshot/<c>` first) |
+| `make deploy-key` | One-time per cluster: create the cluster's GitHub deploy key and register it (`gh`) |
+| `make sync` | Make the cluster's code match GitHub (cluster edits saved to `cluster-snapshot/<c>` first); `SYNC_MODE=rsync` to rsync instead |
 | `make setup-cluster` | One-time per cluster: modules bootstrap + conda env + dependencies |
-| `make smoke` | Short tiny training job that verifies the cluster end-to-end |
+| `make smoke` / `smoke-wait` | Short tiny training job that verifies the cluster end-to-end; wait for it and grade the log |
 | `make submit` | Sync + submit the training job (`NUM_GPU=`, `NODES=`, `TIME=`, `EXTRA_ARGS='...'`) |
 | `make interactive` | Interactive GPU shell (`NUM_GPU=`, `TIME=`) |
 | `make status` | Queue state (`squeue`/`qstat`) |
@@ -484,19 +497,20 @@ Run `make help` for the live list. All targets take `CLUSTER=<jean|raider|nautil
 | `make transfer-list` | List run dirs on a cluster |
 | `make download-run` | rsync a run's outputs to your laptop (`RUN_ID=`) |
 | `make sync-wandb` | Pull offline W&B runs off a cluster and sync to wandb.ai |
-| `make clean` | Delete run artifacts on a cluster (`RUN_ID=` one run, or `EXCLUDE="id1 id2"` keep-these) |
+| `make clean-runs` | Delete run artifacts on a cluster (`RUN_ID=` one run, or `EXCLUDE="id1 id2"` keep-these) |
 
 Common invocations:
 
 ```bash
-make configure                                     # first thing, once
+bash install.sh --target . --dod-user jdoe --anvil-user x-jdoe   # first thing, once (or make configure)
+make deploy-key CLUSTER=jean                       # first time on jean: GitHub deploy key
 make sync CLUSTER=jean                             # push code
-make setup-cluster CLUSTER=jean                    # first time on jean
-make smoke CLUSTER=jean                            # verify end-to-end
+make setup-cluster CLUSTER=jean                    # first time on jean: env
+make smoke CLUSTER=jean && make smoke-wait CLUSTER=jean   # verify end-to-end
 make submit CLUSTER=jean NUM_GPU=4 NODES=2 TIME=48:00:00
 make submit CLUSTER=wheat NUM_GPU=6                # PBS, 6-GPU MLA node
 make submit CLUSTER=anvil NUM_GPU=1 TIME=0:25:00   # short H100 job
 make interactive CLUSTER=nautilus NUM_GPU=4 TIME=2:00:00
 make transfer FROM=raider TO=nautilus RUN_ID=1650317
-make clean CLUSTER=raider EXCLUDE="1650317 1650318"
+make clean-runs CLUSTER=raider EXCLUDE="1650317 1650318"
 ```
