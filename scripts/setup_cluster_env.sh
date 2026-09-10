@@ -7,8 +7,10 @@
 # The Makefile's `make setup-cluster CLUSTER=<c>` passes both; without them we
 # fall back to $HPC_CLUSTER / $HPC_PROJECT, then a filesystem probe.
 #
-# EDIT the "install your project" lines below to match your project's install
-# (pip install -e ., requirements.txt, etc.).
+# Project install: HPC_INSTALL_CMD (config.mk / env) wins; otherwise auto-detect
+# pyproject.toml|setup.py -> pip install -e ., requirements.txt -> pip install -r.
+# torch is installed afterwards if the project did not bring it (the smoke
+# test needs it).
 
 set -e
 
@@ -32,6 +34,19 @@ echo "============================================"
 echo "${ENV_NAME}: Setting up cluster environment (${CLUSTER:-hpcmp})"
 echo "============================================"
 
+install_project() {
+    if [ -n "${HPC_INSTALL_CMD:-}" ]; then
+        echo "Installing project: $HPC_INSTALL_CMD"; eval "$HPC_INSTALL_CMD"
+    elif [ -f pyproject.toml ] || [ -f setup.py ]; then
+        echo "Installing project: pip install -e ."; pip install -e .
+    elif [ -f requirements.txt ]; then
+        echo "Installing project: pip install -r requirements.txt"; pip install -r requirements.txt
+    else
+        echo "No pyproject.toml / setup.py / requirements.txt — skipping project install."
+    fi
+    python -c "import torch" 2>/dev/null || { echo "Installing torch (needed by the smoke test)..."; pip install torch; }
+}
+
 if [ "$CLUSTER" = "anvil" ]; then
     # ─── Anvil (Purdue/ACCESS) ───
     module load anaconda
@@ -48,13 +63,13 @@ if [ "$CLUSTER" = "anvil" ]; then
     if [ -d "$ENV_PREFIX" ]; then
         echo "Conda env at '$ENV_PREFIX' already exists. Updating..."
         conda activate "$ENV_PREFIX"
-        pip install -e . --upgrade          # EDIT ME: your project's install
+        install_project
     else
         echo "Creating conda env at '$ENV_PREFIX'..."
         mkdir -p "$(dirname "$ENV_PREFIX")"
         conda create --prefix "$ENV_PREFIX" python=3.11 -y
         conda activate "$ENV_PREFIX"
-        pip install -e .                    # EDIT ME: your project's install
+        install_project
     fi
 else
     # ─── DoD HPCMP (jean / raider / nautilus / wheat / fran / makau) ───
@@ -100,13 +115,13 @@ MODEOF
         echo "Conda env '$ENV_NAME' already exists. Updating..."
         conda init >/dev/null 2>&1 || true
         conda activate "$ENV_NAME"
-        pip install -e . --upgrade          # EDIT ME: your project's install
+        install_project
     else
         echo "Creating conda env '$ENV_NAME'..."
         conda init >/dev/null 2>&1 || true
         conda create -n "$ENV_NAME" python=3.11 -y
         conda activate "$ENV_NAME"
-        pip install -e .                    # EDIT ME: your project's install
+        install_project
     fi
 fi
 

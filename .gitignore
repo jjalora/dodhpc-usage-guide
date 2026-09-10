@@ -10,3 +10,6 @@ outputs/
 smoke_output/
 wandb_offline_sync/
 __pycache__/
+
+# Smoke-test job id (written by `make smoke`, read by `make smoke-wait`)
+.hpc_smoke_job
