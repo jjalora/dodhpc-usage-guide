@@ -47,6 +47,39 @@ install_project() {
     python -c "import torch" 2>/dev/null || { echo "Installing torch (needed by the smoke test)..."; pip install torch; }
 }
 
+# ─── Usable TMPDIR ───
+# pip unpacks multi-GB wheels (torch alone is ~2.5 GB) into $TMPDIR. Several DoD
+# clusters point TMPDIR at $WORKDIR: on makau that was /p/work, which sat at
+# 499.7 G against a 450 G quota with the grace period expired, so the install died
+# with "OSError: [Errno 122] Disk quota exceeded" pointing at a stdlib tempfile.py
+# — nowhere near the real cause. Probe with a real write (an over-quota Lustre
+# accepts a few MB and then truncates, so check the resulting SIZE, not just the
+# exit status) and fall back to somewhere that works.
+ensure_tmpdir() {
+    local d probe want=134217728   # 128 MB
+    for d in "${TMPDIR:-}" "$HOME/tmp" /tmp; do
+        [ -n "$d" ] || continue
+        mkdir -p "$d" 2>/dev/null || continue
+        probe="$d/.hpckit_tmp_probe.$$"
+        # `|| true`: this script runs under `set -e` and dd legitimately fails
+        # on the very filesystem we are trying to rule out.
+        dd if=/dev/zero of="$probe" bs=1M count=128 >/dev/null 2>&1 || true
+        if [ "$(wc -c < "$probe" 2>/dev/null || echo 0)" -ge "$want" ]; then
+            rm -f "$probe"
+            if [ "$d" != "${TMPDIR:-}" ]; then
+                echo "NOTE: \$TMPDIR (${TMPDIR:-unset}) cannot hold a large write — using $d instead."
+                echo "      That filesystem is probably over quota; check with:"
+                echo "        lfs quota -h -u \$USER \$(df -P \"${TMPDIR:-/tmp}\" | tail -1 | awk '{print \$6}')"
+            fi
+            export TMPDIR="$d"
+            return 0
+        fi
+        rm -f "$probe" 2>/dev/null
+    done
+    echo "WARN: no TMPDIR with room for a 128 MB write — pip will likely fail." >&2
+}
+ensure_tmpdir
+
 if [ "$CLUSTER" = "anvil" ]; then
     # ─── Anvil (Purdue/ACCESS) ───
     module load anaconda
@@ -111,8 +144,36 @@ MODEOF
     # system conda (read-only base at /usr) `conda init` CRASHES outright
     # (elevated-subprocess TypeError, conda 4.14/py3.9), which under set -e
     # would kill the whole setup.
-    if conda info --envs | grep -q "$ENV_NAME"; then
+    # Where the env lives. A torch+CUDA env is 10-20 GB, so this is quota-
+    # sensitive — but do NOT assume $WORKDIR is the roomy one. Measured on makau:
+    # $HOME was 13.5 G of a 90 G quota while $WORKDIR (/p/work) was 499.7 G against
+    # a 450 G quota with the grace period EXPIRED, so every write there failed with
+    # "OSError: [Errno 122] Disk quota exceeded". $WORKDIR is also purged Lustre,
+    # which the anvil branch above deliberately refuses to put an env on.
+    # Default therefore stays with conda's normal by-name env (~/.conda/envs);
+    # point HPC_ENV_ROOT at a large, non-purged filesystem to override.
+    #
+    # If a `Disk quota exceeded` shows up here, check BOTH filesystems before
+    # moving anything:  lfs quota -h -u $USER /p/home ; lfs quota -h -u $USER /p/work
+    ENV_ROOT="${HPC_ENV_ROOT:-}"
+    ENV_PREFIX="${ENV_ROOT:+$ENV_ROOT/$ENV_NAME}"
+
+    if [ -n "$ENV_PREFIX" ] && [ -x "$ENV_PREFIX/bin/python" ]; then
+        echo "Conda env at '$ENV_PREFIX' already exists. Updating..."
+        conda init >/dev/null 2>&1 || true
+        conda activate "$ENV_PREFIX"
+        install_project
+    elif [ -n "$ENV_PREFIX" ]; then
+        echo "Creating conda env at '$ENV_PREFIX' (HPC_ENV_ROOT)..."
+        conda init >/dev/null 2>&1 || true
+        mkdir -p "$ENV_ROOT"
+        conda create --prefix "$ENV_PREFIX" python=3.11 -y
+        conda activate "$ENV_PREFIX"
+        install_project
+    elif conda info --envs 2>/dev/null | grep -qE "^$ENV_NAME[[:space:]]"; then
         echo "Conda env '$ENV_NAME' already exists. Updating..."
+        echo "  (in \$HOME; if this hits a quota, remove it with"
+        echo "   'conda env remove -n $ENV_NAME' and re-run with HPC_ENV_ROOT=<big-fs>)"
         conda init >/dev/null 2>&1 || true
         conda activate "$ENV_NAME"
         install_project
@@ -125,20 +186,55 @@ MODEOF
     fi
 fi
 
-# ─── fran: driver-compatible torch wheel ───
-# fran's NVIDIA driver is 575.x (CUDA 12.9). The default PyPI torch wheel is
-# now cu130 and refuses to initialize CUDA there ("driver too old") — training
-# silently falls back to CPU. Replace it with the cu128 build (CUDA 12.8
-# runtime runs on any 12.8+ driver). Guarded by an actual driver probe, not
-# the cluster name, so a future driver upgrade makes this a no-op: once
-# nvidia-smi reports a 13.x-capable driver, the default wheel is fine.
-if [ "$CLUSTER" = "fran" ]; then
-    DRIVER_CUDA="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 | cut -d. -f1)"
-    if [ -z "$DRIVER_CUDA" ] || [ "${DRIVER_CUDA:-0}" -lt 580 ]; then
+# ─── Driver-compatible torch wheel (every cluster) ───
+# The default PyPI torch wheel is now cu13x, which needs an r580+ NVIDIA driver.
+# On a CUDA 12.x driver it refuses to initialize CUDA ("driver too old") and
+# training silently falls back to CPU — a passing smoke test that proves nothing.
+# Replace it with the cu128 build (the CUDA 12.8 runtime runs on any 12.8+ driver).
+#
+# Gated on an actual driver probe, never on the cluster name: this bit fran first,
+# but any cluster on a 12.x driver has it, and a driver upgrade makes this a no-op.
+#
+# Login nodes usually have no GPU, so nvidia-smi is tried on a compute node first
+# and we only fall back to the local probe. An indeterminate probe is NOT treated
+# as "old" — that would downgrade healthy r580+ clusters; the smoke test's
+# "ran on CPU" warning is the backstop.
+# Probe the LOGIN node only. Never srun: outside a job that is a real allocation
+# (billable, and it pends on a busy cluster), and sinfo returns a compressed
+# hostlist like nid[001000-001127] that would request every node in the range.
+DRIVER_MAJOR="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1)"
+DRIVER_MAJOR="${DRIVER_MAJOR%%.*}"
+
+# Login nodes usually have no GPU, so the probe often comes back empty. Fall back
+# to what we know per cluster rather than guessing — an indeterminate probe used
+# to mean "keep the default wheel", which silently put fran (confirmed 575.x)
+# back on CPU. Add a cluster here once you have measured its driver.
+if [ -z "$DRIVER_MAJOR" ]; then
+    case "$CLUSTER" in
+        fran) DRIVER_MAJOR=575 ;;   # ARL Cray EX4000, CUDA 12.9 — measured
+        jean) DRIVER_MAJOR=565 ;;   # ARL A100-PCIE nodes            — measured
+    esac
+fi
+if [ -n "$DRIVER_MAJOR" ] && [ "$DRIVER_MAJOR" -lt 580 ] 2>/dev/null; then
+    echo ""
+    echo "$CLUSTER: NVIDIA driver $DRIVER_MAJOR.x (< 580, CUDA 12.x) — installing cu128 torch wheel..."
+    # DoD networks make this awkward twice over: DREN's TLS interception breaks
+    # cert validation (hence the CA bundle in the module files), and on jean the
+    # firewall refuses download-r2.pytorch.org outright, so the pytorch.org index
+    # resolves metadata and then dies with [Errno 111] Connection refused.
+    # PyPI IS reachable, and torch 2.8.x ships cu128 as its DEFAULT wheel — so
+    # fall back to pinning the version rather than switching the index.
+    TORCH_CU12_FALLBACK="${TORCH_CU12_FALLBACK:-2.8.0}"
+    pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu128 || {
         echo ""
-        echo "fran: driver < 580 (CUDA 12.x) — installing cu128 torch wheel..."
-        pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu128
-    fi
+        echo "  pytorch.org unreachable from $CLUSTER — falling back to PyPI torch==$TORCH_CU12_FALLBACK (bundles cu128)."
+        pip install --force-reinstall "torch==$TORCH_CU12_FALLBACK"
+    }
+elif [ -z "$DRIVER_MAJOR" ]; then
+    echo ""
+    echo "NOTE: could not probe the NVIDIA driver from this login node; keeping the default"
+    echo "      torch wheel. If the smoke test warns it ran on CPU, the driver is CUDA 12.x —"
+    echo "      fix with: pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu128"
 fi
 
 # ─── W&B setup (optional — remove if you don't use Weights & Biases) ───

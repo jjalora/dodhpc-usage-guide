@@ -20,6 +20,7 @@ Run these and report anything missing:
 
 ```bash
 git -C . rev-parse --show-toplevel        # the project must be a git repo (cd to its root)
+git -C . remote get-url origin            # and it must have a GitHub remote (see below)
 which make ssh rsync git                  # all required
 which kshell kinit klist                  # HPCMP Kerberos kit — required for the DoD clusters
 which gh && gh auth status                # optional: lets make deploy-key register keys itself
@@ -27,6 +28,21 @@ which gh && gh auth status                # optional: lets make deploy-key regis
 
 If `kshell` is missing, the user must install the HPCMP Kerberos kit first
 (https://centers.hpc.mil/users/index.html#kerberos). Anvil does not need it.
+
+**If the project is not a git repo, or has no GitHub `origin`**, stop and ask the user which
+they want before installing — do not guess:
+
+- *Recommended:* `git init`, commit the existing tree, and create the GitHub repo
+  (`gh repo create <owner>/<project> --private --source=. --remote=origin --push`). This
+  enables the default deploy-key sync, where GitHub is the source of truth on the cluster.
+- *Alternative:* stay local and use `SYNC_MODE=rsync` for **every** command in step 5 onward.
+
+Without one of these, `config.mk` gets the placeholder `git@github.com:your-org/<project>.git`
+and `make sync` fails on the cluster with a confusing clone error.
+
+Note the branch name (`git branch --show-current`). `make sync` defaults `GIT_BRANCH` to the
+laptop's current branch and the cluster is reset to `origin/<that branch>`, so the branch must
+exist on GitHub.
 
 ## 2. Install the kit
 
@@ -69,7 +85,18 @@ auth failure in a loop.
 
 ## 5. Sync the code to the cluster
 
-Preferred (GitHub is the source of truth on the cluster):
+**First commit and push the kit.** In the default git mode `make sync` resets the cluster
+checkout to `origin/<branch>`, so anything uncommitted — including every file the installer
+just wrote — never reaches the cluster, and `setup-cluster` then fails with
+`scripts/setup_cluster_env.sh: No such file or directory`:
+
+```bash
+git add -A && git commit -m 'chore(hpc): install DoD HPC helper kit' && git push
+```
+
+(Skip only in `SYNC_MODE=rsync`, which copies the working tree as-is.)
+
+Then, preferred (GitHub is the source of truth on the cluster):
 
 ```bash
 make deploy-key CLUSTER=<c>      # creates the cluster's key; registers it with gh if available

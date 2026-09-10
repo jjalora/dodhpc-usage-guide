@@ -15,7 +15,10 @@
 module load nvidia/2026/nvhpc-nompi/26.3 2>/dev/null \
     || module load nvidia/2023/nvhpc-byo-compiler/23.11 2>/dev/null \
     || echo "WARN: no nvidia/nvhpc module loaded (module avail nvidia)" >&2
-source /etc/profile.d/conda.sh
+# Login nodes only: the compute image has no conda at all. Guard the source so
+# job bodies do not emit a "No such file or directory" error; cluster_env.sh
+# then falls back to the env's bin/ on PATH.
+[ -r /etc/profile.d/conda.sh ] && source /etc/profile.d/conda.sh
 
 # Node via nvm
 export NVM_DIR="$HOME/.nvm"

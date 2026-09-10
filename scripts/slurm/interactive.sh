@@ -55,9 +55,15 @@ case "$CLUSTER" in
             --time="$TIME" --pty bash
         ;;
     makau)
-        # Makau (MHPCC, Cray XD2000): typed gres. Default h100_sxm5 = AI/ML
-        # nodes (4x 80GB); MAKAU_GPU_TYPE=h100_nvl = Mixed nodes (1x 94GB).
-        GPU_TYPE="${MAKAU_GPU_TYPE:-h100_sxm5}"
+        # Makau (MHPCC, Cray XD2000): typed gres, and the type must match the
+        # node class or the request is rejected outright — h100_sxm5 = AI/ML
+        # nodes (4x 80GB, only valid with 4) and h100_nvl = Mixed nodes
+        # (1x 94GB, only valid with 1). Derive it from the count, like hpc.mk.
+        if [ "$GPUS" = 1 ]; then
+            GPU_TYPE="${MAKAU_GPU_TYPE:-h100_nvl}"
+        else
+            GPU_TYPE="${MAKAU_GPU_TYPE:-h100_sxm5}"
+        fi
         srun --account "$ACCOUNT" -p standard --gres=gpu:"$GPU_TYPE":"$GPUS" \
             --nodes 1 --ntasks-per-node=1 \
             --time="$TIME" --pty bash

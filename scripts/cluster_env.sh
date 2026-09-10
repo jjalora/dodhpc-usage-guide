@@ -77,6 +77,12 @@ case "$HPC_CLUSTER" in
         else
             echo "WARN: $HOME/load_modules_cuda.sh not found (run: make setup-cluster CLUSTER=$HPC_CLUSTER)" >&2
         fi
+        # Envs default to conda's by-name location (~/.conda/envs). Do NOT
+        # redirect these to $WORKDIR by default: measured on makau, $WORKDIR
+        # (/p/work) was over its 450 G quota with grace expired while $HOME had
+        # 76 G free, so "helpfully" moving envs/caches there made every write
+        # fail with Errno 122. Set HPC_ENV_ROOT (and optionally CONDA_PKGS_DIRS
+        # / PIP_CACHE_DIR) explicitly when you know which filesystem has room.
         ;;
 esac
 
@@ -100,7 +106,62 @@ fi
 # Non-fatal so first-time `make setup-cluster` can bootstrap before the env
 # exists; a genuinely missing env then fails at `python` with a clear traceback.
 # DoD clusters activate by name; anvil by prefix (HPC_CONDA_ENV above).
-conda activate "${HPC_CONDA_ENV:-$HPC_PROJECT}" 2>/dev/null || \
+#
+# Some clusters ship conda ONLY on the login nodes: on makau the compute image
+# has neither a `conda` command nor /etc/profile.d/conda.sh, so `conda activate`
+# in a job body silently no-ops and the job runs the system python
+# ("ModuleNotFoundError: No module named 'torch'"). A conda env is a
+# self-contained prefix, so fall back to putting its bin/ on PATH — no conda
+# required. $HOME is shared with the login nodes, which is where the env lives.
+hpc_activate_env() {
+    local env="${HPC_CONDA_ENV:-$HPC_PROJECT}" prefix="" root="" py=""
+
+    # Try a real activation first (sets CONDA_DEFAULT_ENV, pip shims, etc.), but
+    # do NOT trust its exit status — see the verification below.
+    if type conda >/dev/null 2>&1; then
+        conda activate "$env" 2>/dev/null || true
+    fi
+
+    # Resolve the env to a prefix: an explicit path, else the usual env roots.
+    case "$env" in
+        /*) prefix="$env" ;;
+        *)
+            local IFS=':'
+            for root in ${CONDA_ENVS_PATH:-} ${CONDA_ENVS_DIRS:-} "$HOME/.conda/envs" \
+                        "${HPC_ENV_ROOT:-}" "$HOME/miniforge3/envs" "$HOME/miniconda3/envs"; do
+                if [ -n "$root" ] && [ -x "$root/$env/bin/python" ]; then
+                    prefix="$root/$env"; break
+                fi
+            done ;;
+    esac
+
+    [ -n "$prefix" ] && [ -x "$prefix/bin/python" ] || return 1
+
+    # Conda may exist but not know this env by name (envs outside its envs_dirs).
+    if [ "${CONDA_PREFIX:-}" != "$prefix" ] && type conda >/dev/null 2>&1; then
+        conda activate "$prefix" 2>/dev/null || true
+    fi
+
+    # VERIFY, never trust. `conda activate` is a silent no-op when the env is
+    # already the active one — which is exactly the case inside a job, because
+    # `sbatch --export=ALL` inherits the submit shell's activation. The job body
+    # then re-sources ~/load_modules_cuda.sh, whose `module load` prepends the
+    # system/CSE python AHEAD of the env, so `python` becomes the wrong
+    # interpreter and the job dies with "No module named 'torch'" while conda
+    # still reports the env as active. Observed on jean.
+    #
+    # Also makes this idempotent (the file is sourced twice by design): if python
+    # already resolves inside the prefix, nothing is changed.
+    py="$(command -v python 2>/dev/null)"
+    [ "$py" = "$prefix/bin/python" ] && { export CONDA_PREFIX="$prefix"; return 0; }
+
+    export CONDA_PREFIX="$prefix"
+    export PATH="$prefix/bin:$PATH"
+    echo "NOTE: forced $prefix/bin to the front of PATH on $(hostname -s) (was: ${py:-none})." >&2
+    return 0
+}
+
+hpc_activate_env || \
     echo "WARN: conda env '${HPC_CONDA_ENV:-$HPC_PROJECT}' not active (run: make setup-cluster CLUSTER=$HPC_CLUSTER)" >&2
 
 # ─── Cross-cluster transfer helpers (DoD clusters only — Kerberos hop) ───

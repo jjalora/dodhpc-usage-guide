@@ -42,13 +42,26 @@ fi
 
 # Derive project name and GitHub URL from the target repo when not given.
 PROJECT="${PROJECT:-$(basename "$TARGET")}"
+GITHUB_PLACEHOLDER=0
 if [ -z "$GITHUB_SSH" ]; then
     ORIGIN="$(git -C "$TARGET" remote get-url origin 2>/dev/null || true)"
     case "$ORIGIN" in
         git@github.com:*) GITHUB_SSH="$ORIGIN" ;;
         https://github.com/*) GITHUB_SSH="git@github.com:${ORIGIN#https://github.com/}"; GITHUB_SSH="${GITHUB_SSH%.git}.git" ;;
-        *) GITHUB_SSH="git@github.com:your-org/${PROJECT}.git" ;;
+        *) GITHUB_SSH="git@github.com:your-org/${PROJECT}.git"; GITHUB_PLACEHOLDER=1 ;;
     esac
+fi
+
+# The default sync mode clones the repo ON the cluster, so a real git repo with a
+# GitHub remote is required. Warn loudly rather than failing later on the cluster.
+if ! git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "WARN: '$TARGET' is not a git repository."
+    echo "      Run 'git init', commit, and add a GitHub remote, then re-run this installer;"
+    echo "      otherwise every command must use SYNC_MODE=rsync."
+elif [ "$GITHUB_PLACEHOLDER" = 1 ]; then
+    echo "WARN: no GitHub 'origin' remote found — config.mk gets the placeholder"
+    echo "      $GITHUB_SSH, which 'make sync' cannot clone."
+    echo "      Add the remote and re-run this installer, or use SYNC_MODE=rsync."
 fi
 
 echo "Installing HPC kit -> $TARGET  (project=$PROJECT, dod=$DOD_USER, anvil=$ANVIL_USER)"
@@ -73,7 +86,7 @@ fi
 
 # ─── 3. .gitignore ───
 touch "$TARGET/.gitignore"
-for line in config.mk .hpc_smoke_job logs/ outputs/ smoke_output/ wandb_offline_sync/; do
+for line in config.mk .hpc_smoke_job '.hpc_smoke_job.*' logs/ outputs/ smoke_output/ wandb_offline_sync/; do
     grep -qxF "$line" "$TARGET/.gitignore" || echo "$line" >> "$TARGET/.gitignore"
 done
 
@@ -117,6 +130,10 @@ cat <<MSG
 
 Installed. Files: hpc.mk, scripts/, load_modules/, examples/train_smoke.py, config.mk,
 .claude/skills/hpc-cluster (+ .agents/skills symlink), AGENTS.md / CLAUDE.md section.
+
+FIRST, in git sync mode (the default), commit and push the kit — 'make sync' makes the
+cluster match origin, so uncommitted kit files never reach it:
+  git add -A && git commit -m 'chore(hpc): install DoD HPC helper kit' && git push
 
 Next (per cluster; DoD clusters need a ticket first: kshell, then kinit):
   make deploy-key CLUSTER=<c>       # register this cluster's GitHub deploy key (or use SYNC_MODE=rsync)

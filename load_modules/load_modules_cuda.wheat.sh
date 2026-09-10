@@ -5,7 +5,8 @@
 module load cseinit-noloads
 module load cse/miniforge/latest
 module load nvidia/cuda
-source /p/app/CSE/CSE.20231211/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh
+# Guarded: if the CSE tree is not mounted here, cluster_env.sh falls back to the env bin/.
+[ -r /p/app/CSE/CSE.20231211/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh ] && source /p/app/CSE/CSE.20231211/Release/Miniforge3-24.11.2-1/etc/profile.d/conda.sh
 
 # Node via nvm
 export NVM_DIR="$HOME/.nvm"

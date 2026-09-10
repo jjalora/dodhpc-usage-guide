@@ -165,9 +165,14 @@ SBATCH_COMMON = --nodes=$(NODES) --time=$(TIME) --account=$(ACCOUNT)
 SBATCH_ARGS   = $(SBATCH_GPU) $(SBATCH_COMMON)
 
 # Makau GPU node type for the typed gres request: h100_sxm5 = AI/ML nodes
-# (4x H100 SXM5 80GB + node-local NVMe, default) or h100_nvl = Mixed nodes
-# (1x H100 NVL 94GB — force NUM_GPU=1 with it; multi-GPU means multi-node).
-MAKAU_GPU_TYPE ?= h100_sxm5
+# (4x H100 SXM5 80GB + node-local NVMe) or h100_nvl = Mixed nodes
+# (1x H100 NVL 94GB; multi-GPU there means multi-node).
+#
+# The type must match the node class or makau rejects the job outright
+# ("Invalid GRES specified"): h100_sxm5 is only valid with 4 GPUs and h100_nvl
+# only with 1. A static default therefore broke `make smoke` (NUM_GPU=1) on this
+# cluster, so derive it from the GPU count; override explicitly when needed.
+MAKAU_GPU_TYPE ?= $(if $(filter 1,$(strip $(NUM_GPU))),h100_nvl,h100_sxm5)
 
 # Wheat (PBS) qsub args. ncpus=92 is the full standard/MLA node on wheat.
 # nmlas=NUM_GPU targets 4-GPU MLA when NUM_GPU=4 (default) or 6-GPU MLA when NUM_GPU=6.
@@ -218,7 +223,8 @@ SRUN_GPU_raider   = srun --account $(ACCOUNT) --constraint=mla --gpus-per-node=1
 SRUN_GPU_nautilus = srun --account $(ACCOUNT) --constraint=mla --gpus-per-node=1 -q $(PARTITION) --nodes 1 --time=1:00:00
 SRUN_GPU_anvil    = srun --account $(strip $(ACCOUNT)) -p $(strip $(PARTITION)) --gpus-per-node=1 --nodes 1 --time=1:00:00
 SRUN_GPU_fran     = srun --account $(ACCOUNT) -p $(strip $(PARTITION)) --gres=gpu:1 --nodes 1 --time=1:00:00
-SRUN_GPU_makau    = srun --account $(ACCOUNT) -p $(strip $(PARTITION)) --gres=gpu:$(strip $(MAKAU_GPU_TYPE)):1 --nodes 1 --time=1:00:00
+# Interactive asks for exactly 1 GPU, so it must use the Mixed-node type (see MAKAU_GPU_TYPE).
+SRUN_GPU_makau    = srun --account $(ACCOUNT) -p $(strip $(PARTITION)) --gres=gpu:$(strip $(if $(filter h100_sxm5,$(strip $(MAKAU_GPU_TYPE))),h100_nvl,$(MAKAU_GPU_TYPE))):1 --nodes 1 --time=1:00:00
 SRUN_GPU          = $(SRUN_GPU_$(CLUSTER))
 
 # Remote environment preamble: one dispatcher script handles every cluster
@@ -264,9 +270,11 @@ configure: ## Write config.mk (project, usernames, accounts) via guided prompts 
 # (examples/train_smoke.py) trains a small MLP on synthetic data — no
 # downloads, air-gap safe — and prints "SMOKE TEST PASSED". Run this on every
 # new cluster and after every environment change; add NUM_GPU=4 to also
-# exercise NCCL collectives. The job id is saved to .hpc_smoke_job so
-# `make smoke-wait` can poll it and grade the log.
+# exercise NCCL collectives. The job id is saved to .hpc_smoke_job.$(CLUSTER)
+# so `make smoke-wait` can poll it and grade the log — per cluster, so smoking a
+# second cluster never clobbers the job id of one still queued on the first.
 SMOKE_TIMEOUT ?= 1800
+SMOKE_JOB_FILE = .hpc_smoke_job.$(CLUSTER)
 
 .PHONY: smoke
 smoke: NUM_GPU := 1
@@ -274,9 +282,9 @@ smoke: TIME := 0:30:00
 smoke: sync ## Short tiny training job that verifies a cluster end-to-end (CLUSTER=x [NUM_GPU=4]); then: make smoke-wait
 	@ssh $(SSH_OPTS) $(SSH_HOST) \
 		'$(REMOTE_INIT) && cd $(REMOTE_DIR) && $(call SUBMIT_JOB,example_job.sh,--max-steps 200 $(EXTRA_ARGS))' \
-		| tee /dev/stderr | grep -oE 'Submitted batch job [0-9]+|^[0-9]+' | grep -oE '[0-9]+' | tail -1 > .hpc_smoke_job
-	@test -s .hpc_smoke_job || { echo "ERROR: no job id returned by the scheduler"; exit 1; }
-	@echo "Smoke job $$(cat .hpc_smoke_job) submitted on $(CLUSTER). Next: make smoke-wait CLUSTER=$(CLUSTER)"
+		| tee /dev/stderr | grep -oE 'Submitted batch job [0-9]+|^[0-9]+' | grep -oE '[0-9]+' | tail -1 > $(SMOKE_JOB_FILE)
+	@test -s $(SMOKE_JOB_FILE) || { echo "ERROR: no job id returned by the scheduler"; exit 1; }
+	@echo "Smoke job $$(cat $(SMOKE_JOB_FILE)) submitted on $(CLUSTER). Next: make smoke-wait CLUSTER=$(CLUSTER)"
 
 # Poll the smoke job until it leaves the queue (or SMOKE_TIMEOUT s), then grade
 # its log. Exit 0 = PASSED, 1 = failed, 2 = still queued/running (re-run later).
@@ -288,9 +296,9 @@ endif
 
 .PHONY: smoke-wait
 smoke-wait: check-auth ## Wait for the smoke job and grade its log (exit 0 pass / 1 fail / 2 still running)
-	@test -s .hpc_smoke_job || { echo "ERROR: no .hpc_smoke_job — run make smoke CLUSTER=$(CLUSTER) first"; exit 1; }
+	@test -s $(SMOKE_JOB_FILE) || { echo "ERROR: no $(SMOKE_JOB_FILE) — run make smoke CLUSTER=$(CLUSTER) first"; exit 1; }
 	@ssh $(SSH_OPTS) $(SSH_HOST) \
-		'cd $(REMOTE_DIR) && ID=$(shell cat .hpc_smoke_job) && \
+		'cd $(REMOTE_DIR) && ID=$(shell cat $(SMOKE_JOB_FILE)) && \
 		 WAITED=0; while $(SMOKE_IN_QUEUE); do \
 		   if [ $$WAITED -ge $(SMOKE_TIMEOUT) ]; then echo "Job $$ID still queued/running after $(SMOKE_TIMEOUT)s — re-run make smoke-wait later"; exit 2; fi; \
 		   sleep 30; WAITED=$$((WAITED+30)); done; \
@@ -321,8 +329,10 @@ ifeq ($(CLUSTER),anvil)
 check-auth:
 	@ssh -o BatchMode=yes -o ConnectTimeout=8 $(SSH_HOST) true 2>/dev/null || \
 		(echo "ERROR: SSH key auth to $(SSH_HOST) failed. Register your public key via the RCAC account portal and retry." && exit 1)
+	@echo "OK: ssh key auth to $(SSH_HOST) works."
 else
 check-auth: check-kerberos
+	@echo "OK: Kerberos ticket valid for $(CLUSTER) ($(SSH_HOST))."
 endif
 
 # ─── Cluster Operations ─── #
@@ -333,7 +343,7 @@ sync: check-auth ## Put this working tree on the cluster (SYNC_MODE=rsync: rsync
 		--exclude='.git' --exclude='__pycache__' --exclude='*.pyc' --exclude='.venv' \
 		--exclude='outputs/' --exclude='logs/' --exclude='wandb/' --exclude='smoke_output/' \
 		--exclude='wandb_offline_sync/' --exclude='*.egg-info' --exclude='*.pt' --exclude='*.ckpt' \
-		--exclude='.hpc_smoke_job' \
+		--exclude='.hpc_smoke_job*' \
 		./ "$(SSH_HOST):$(REMOTE_DIR)/"
 	@ssh $(SSH_OPTS) $(SSH_HOST) 'mkdir -p $(REMOTE_DIR)/logs'
 else
@@ -345,7 +355,7 @@ endif
 
 .PHONY: deploy-key
 deploy-key: check-auth ## One-time per cluster: create the cluster's deploy key and register it on GitHub (uses gh if available)
-	DEPLOY_KEY="$(DEPLOY_KEY)" GITHUB_SSH="$(GITHUB_SSH)" SSH_OPTS="$(SSH_OPTS)" \
+	DEPLOY_KEY='$(DEPLOY_KEY)' GITHUB_SSH='$(GITHUB_SSH)' SSH_OPTS='$(SSH_OPTS)' \
 		bash scripts/deploy_key.sh "$(CLUSTER)" "$(SSH_HOST)"
 
 .PHONY: setup-cluster
