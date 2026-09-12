@@ -1,13 +1,37 @@
 # DoD HPC usage guide
 
-This repo is the one-stop reference for using the DoD High Performance Computing Modernization Program (HPCMP) clusters with the AI Studio — from getting an account to training and serving models. It also ships the helper kit that makes the clusters easy to drive from your laptop: `hpc.mk` (a Makefile you `include`) plus `scripts/` that handle authentication checks, code sync, job submission on both schedulers (SLURM and PBS Pro), monitoring, transfers, and a smoke test that verifies a cluster end-to-end. `install.sh` drops the kit into any project, and [AGENT_SETUP.md](AGENT_SETUP.md) lets an AI coding agent (Claude Code, Codex, OpenCode) do the whole installation and smoke test for you.
+Everything you need to train and serve models on the DoD HPCMP clusters (Jean, Raider, Nautilus, Wheat, Fran, Makau) and Purdue Anvil — from getting an account to multi-node jobs — plus a helper kit that drives every cluster from your laptop with `make`.
 
-General user documentation lives at [centers.hpc.mil/users](https://centers.hpc.mil/users/index.html) — refer to it for anything this guide does not cover.
+The kit is `hpc.mk` (a Makefile you `include`) and `scripts/`: authentication checks, code sync, job submission on both schedulers (SLURM and PBS Pro), monitoring, transfers, and a smoke test that verifies a cluster end-to-end. It also ships an `hpc-cluster` skill so Claude Code, Codex, and OpenCode can operate the clusters for you.
 
-New here? Work through sections 1–4 in order (start section 1 early — the background check takes weeks), then run the [smoke test](#6-smoke-test). Already have accounts and want the kit in your own repo? Jump to [Install into your project](#5-the-helper-kit).
+> [!NOTE]
+> General user documentation lives at [centers.hpc.mil/users](https://centers.hpc.mil/users/index.html) — refer to it for anything this guide does not cover.
+
+## Quick start: install with your AI agent
+
+The fastest way to get a project running on the clusters is to let your coding agent install the kit and validate a cluster for you. From your project's root, open Claude Code, Codex, or OpenCode and paste:
+
+```text
+Follow the instructions in https://raw.githubusercontent.com/jjalora/dodhpc-usage-guide/main/AGENT_SETUP.md
+```
+
+The agent asks for your two usernames (DoD HPCMP and Anvil), installs the kit, has you run `kshell` + `kinit`, builds the cluster environment, and runs the smoke test until it passes. If your agent cannot fetch URLs, download [AGENT_SETUP.md](AGENT_SETUP.md) into the project first and point the agent at the local file.
+
+> [!IMPORTANT]
+> You need HPCMP accounts and the Kerberos kit before the agent can reach a DoD cluster. New here? Work through sections 1–2 first — and start [Get an account](#1-get-an-account) early, the background check takes weeks.
+
+**Prefer to install by hand?** Same result, one command from your project's root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jjalora/dodhpc-usage-guide/main/install.sh \
+  | bash -s -- --target . --dod-user <dod-username> --anvil-user <x-username>
+```
+
+Then continue with [Set up a new cluster](#4-set-up-a-new-cluster) and the [smoke test](#6-smoke-test).
 
 ## Table of contents
 
+- [Quick start: install with your AI agent](#quick-start-install-with-your-ai-agent)
 1. [Get an account](#1-get-an-account)
    - [Complete cyber awareness training](#complete-cyber-awareness-training)
    - [Apply for a pIE account](#apply-for-a-pie-account)
@@ -236,16 +260,9 @@ make smoke-wait CLUSTER=<cluster>
 
 ## 5. The helper kit
 
-`hpc.mk` and `scripts/` in this repo drive every cluster from your laptop. Install them into your own project with one command, run from your project's root:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jjalora/dodhpc-usage-guide/main/install.sh \
-  | bash -s -- --target . --dod-user <dod-username> --anvil-user <x-username>
-```
+`hpc.mk` and `scripts/` drive every cluster from your laptop. Install them into your own project through the [quick start](#quick-start-install-with-your-ai-agent) — either via your agent or with the `install.sh` one-liner.
 
 The installer copies `hpc.mk`, `scripts/`, `load_modules/`, and `examples/train_smoke.py`; adds `include hpc.mk` to your `Makefile` (creating one if needed; your own targets and default goal are untouched); writes `config.mk`; installs the `hpc-cluster` agent skill under `.claude/skills/` with an `.agents/skills/` link so Claude Code, Codex, and OpenCode all find it; and appends a short HPC section to `AGENTS.md` and `CLAUDE.md`. It is idempotent — re-run it to pick up kit updates. The project name comes from the directory, the GitHub URL from `origin`, and the accounts default to the AI Studio allocations, so the two usernames are the only inputs. Pass `--install-cmd '<cmd>'` if your project needs a non-standard install on the cluster (default: `pip install -e .` or `requirements.txt`, plus `torch` if missing).
-
-**Let an agent do it.** Point Claude Code, Codex, or OpenCode at [AGENT_SETUP.md](AGENT_SETUP.md) ("follow these instructions") — it collects your two usernames, installs the kit, walks you through `kinit`, sets up the cluster environment, and runs the smoke test until it passes.
 
 `config.mk` holds your project name, usernames, and accounts; because it is gitignored, `git pull` never conflicts with your settings and nothing personal gets committed. Re-run `make configure` to change it interactively.
 
